@@ -316,9 +316,18 @@ class NoteHelperApp:
             self.search_var = tk.StringVar()
             self.search_timer = None
             self.selected_card_widget = None
+            
+            # ===== SEARCHER MODE (NEW) =====
+            self.searcher_mode_active = False
+            self.last_clipboard_text = ""
 
             # Build UI
             self._build_ui()
+
+            # ===== KEYBOARD SHORTCUTS (NEW) =====
+            self.root.bind("<Control-c>", self._on_search_hotkey)
+            self.root.bind("<Delete>", self._on_delete_key)
+            self.root.bind("<Control-e>", self._on_edit_key)
 
             # Initial display
             self._refresh_list()
@@ -376,6 +385,18 @@ class NoteHelperApp:
             self.btn_theme = ctk.CTkButton(right_frame, text="🌗", width=40, height=40, command=self._safe_toggle_theme)
             self.btn_theme.pack(side="left", padx=2)
 
+            # ===== SEARCHER BUTTON (NEW) =====
+            self.btn_searcher = ctk.CTkButton(
+                right_frame, text="[SEARCHER] OFF", width=140, height=40,
+                command=self._toggle_searcher_mode,
+                fg_color="#666666"
+            )
+            self.btn_searcher.pack(side="left", padx=2)
+
+            # Help button
+            self.btn_help = ctk.CTkButton(right_frame, text="❓", width=40, height=40, command=self._show_shortcuts_help)
+            self.btn_help.pack(side="left", padx=2)
+
             # Bind search with debounce
             self.search_var.trace("w", self._on_search_input)
 
@@ -383,7 +404,6 @@ class NoteHelperApp:
             self.container = ctk.CTkScrollableFrame(self.root, fg_color="transparent")
             self.container.pack(side="top", fill="both", expand=True, padx=6, pady=6)
 
-            # ===== FOOTER =====
             # ===== FOOTER FRAME =====
             footer_frame = ctk.CTkFrame(self.root, fg_color="#1f1f1f", height=28)
             footer_frame.pack(side="bottom", fill="x")
@@ -533,6 +553,7 @@ class NoteHelperApp:
     def _safe_add_record(self):
         """Add record (safe wrapper)."""
         self._safe_wrapper(self._add_record)
+
     def _add_record(self):
         """Open dialog to add new record."""
         try:
@@ -805,6 +826,135 @@ class NoteHelperApp:
             logger.error(f"Theme toggle error: {e}")
             raise
 
+    # ===== SEARCHER MODE METHODS (NEW) =====
+    def _toggle_searcher_mode(self):
+        """Toggle searcher mode."""
+        try:
+            self.searcher_mode_active = not self.searcher_mode_active
+            if self.searcher_mode_active:
+                self.btn_searcher.configure(fg_color="#2ecc71", text="[SEARCHER] ON - Ctrl+C")
+                self._show_toast("Searcher Mode: ON (Ctrl+C ile arama)", duration=1500)
+                logger.info("Searcher Mode: ON")
+            else:
+                self.btn_searcher.configure(fg_color="#666666", text="[SEARCHER] OFF")
+                self._show_toast("Searcher Mode: OFF", duration=1200)
+                logger.info("Searcher Mode: OFF")
+        except Exception as e:
+            logger.error(f"[ERROR] Searcher mode toggle: {e}")
+
+    def _on_search_hotkey(self, event=None):
+        """Handle Ctrl+C hotkey for Searcher Mode."""
+        if not self.searcher_mode_active:
+            return
+        try:
+            clipboard_text = self.root.clipboard_get().strip()
+            if clipboard_text and len(clipboard_text) > 1:
+                # Don't search if it's the same text
+                if clipboard_text != self.last_clipboard_text:
+                    self.last_clipboard_text = clipboard_text
+                    self.search_var.set(clipboard_text)
+                    self._perform_search()
+                    logger.debug(f"Searcher: Searched '{clipboard_text[:30]}...'")
+        except tk.TclError:
+            pass
+        except Exception as e:
+            logger.error(f"[ERROR] Search hotkey: {e}")
+
+    def _on_delete_key(self, event=None):
+        """Handle Delete key to delete selected record."""
+        try:
+            if hasattr(self, 'last_selected_record_code') and self.last_selected_record_code:
+                record = next((r for r in self.data.records if r.code == self.last_selected_record_code), None)
+                if record:
+                    self._safe_edit_record(record)
+                    return
+            self._show_toast("Silmek için önce bir kayıt seçiniz", duration=1500)
+        except Exception as e:
+            logger.error(f"[ERROR] Delete key: {e}")
+
+    def _on_edit_key(self, event=None):
+        """Handle Ctrl+E to edit selected record."""
+        try:
+            if hasattr(self, 'last_selected_record_code') and self.last_selected_record_code:
+                record = next((r for r in self.data.records if r.code == self.last_selected_record_code), None)
+                if record:
+                    self._safe_edit_record(record)
+                    return
+            self._show_toast("Düzenlemek için önce bir kayıt seçiniz", duration=1500)
+        except Exception as e:
+            logger.error(f"[ERROR] Edit key: {e}")
+
+    def _show_shortcuts_help(self):
+        """Show keyboard shortcuts help dialog."""
+        try:
+            help_dialog = ctk.CTkToplevel(self.root)
+            help_dialog.title("⌨️ Keyboard Shortcuts")
+            help_dialog.geometry("500x450")
+            help_dialog.resizable(False, False)
+            
+            # Header
+            header = ctk.CTkLabel(
+                help_dialog, 
+                text="⌨️ KEYBOARD SHORTCUTS",
+                font=("Courier", 12, "bold"),
+                text_color="#ffffff",
+                fg_color="#333333",
+                pady=10
+            )
+            header.pack(fill="x")
+            
+            # Content frame with scrollable text
+            content_frame = ctk.CTkFrame(help_dialog, fg_color="transparent")
+            content_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            shortcuts_text = """SEARCH & VIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Ctrl + C        Toggle Searcher Mode
+                  (auto-search clipboard)
+  Type in search  Find by code/description
+  ⭐ Favori       Show favorite records
+  🕘 Son          Show recently used
+  
+RECORD MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Delete          Delete selected record
+  Ctrl + E        Edit selected record
+  Click on card   Mark as recently used
+  Copy button     Copy text to clipboard
+  
+IMPORT / EXPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  📥 İçe          Import from .txt file
+  📤 Dışa         Export to .txt file
+  
+THEME
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🌗              Toggle Dark/Light theme"""
+            
+            text_widget = ctk.CTkTextbox(
+                content_frame,
+                height=18, width=55,
+                font=("Courier", 10),
+                text_color="#ffffff"
+            )
+            text_widget.pack(fill="both", expand=True)
+            text_widget.insert("1.0", shortcuts_text)
+            text_widget.configure(state="disabled")
+            
+            # Close button
+            close_btn = ctk.CTkButton(
+                help_dialog,
+                text="Kapat",
+                command=help_dialog.destroy,
+                fg_color="#0d47a1",
+                hover_color="#1565c0"
+            )
+            close_btn.pack(pady=10)
+            
+        except Exception as e:
+            logger.error(f"Error showing help dialog: {e}")
+            messagebox.showerror("Hata", f"Yardım penceresi açılamadı: {e}")
+
     def _copy_text(self, text: str):
         """Copy text to clipboard."""
         try:
@@ -823,7 +973,7 @@ class NoteHelperApp:
         except Exception as e:
             logger.error(f"Copy error: {e}")
 
-    def _show_toast(self, msg: str):
+    def _show_toast(self, msg: str, duration: int = 2000):
         """Show temporary notification."""
         try:
             if not msg or not isinstance(msg, str):
@@ -834,7 +984,7 @@ class NoteHelperApp:
             
             t = ctk.CTkLabel(self.root, text=msg, bg_color="transparent", text_color="#4CAF50")
             t.place(relx=0.5, rely=0.92, anchor="center")
-            self.root.after(1200, lambda: self._safe_destroy_widget(t))
+            self.root.after(duration, lambda: self._safe_destroy_widget(t))
         except tk.TclError:
             logger.debug("Widget creation failed (window might be destroyed)")
         except Exception as e:
@@ -932,6 +1082,8 @@ class NoteHelperApp:
                     if card.winfo_exists():
                         card.configure(border_width=3, border_color="#555555")
                         self.selected_card_widget = card
+                        # Store record code for keyboard shortcuts
+                        self.last_selected_record_code = record.code
                     
                     record.last_used = datetime.now().isoformat()
                     self.data.save()
@@ -1039,4 +1191,3 @@ if __name__ == "__main__":
         traceback.print_exc()
         messagebox.showerror("Kritik Hata", f"Uygulamayı başlatamıyorum: {e}")
         sys.exit(1)
-
