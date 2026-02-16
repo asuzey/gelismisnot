@@ -15,7 +15,7 @@ import threading
 import time
 import webbrowser
 
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v1.1.0"
 GITHUB_URL = "https://github.com/asuzey"
 
 
